@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -379,3 +380,53 @@ async def test_async_unload_entry_when_not_loaded(
     """Test unloading an entry that was never loaded returns cleanly."""
     result = await async_unload_entry(hass, mock_config_entry)
     assert result is True or result is False
+
+
+async def test_async_setup_and_unload_with_forwarded_platforms(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test setup and unload entry forwards platforms when PLATFORMS is configured."""
+    with (
+        patch(
+            "custom_components.canvas.PLATFORMS",
+            [Platform.SENSOR],
+        ),
+        patch(
+            "custom_components.canvas.CanvasApiClient",
+            autospec=True,
+        ) as mock_client_cls,
+        patch(
+            "custom_components.canvas.coordinator.CanvasApiClient",
+            new=mock_client_cls,
+            create=True,
+        ),
+        patch.object(
+            hass.config_entries,
+            "async_forward_entry_setups",
+            return_value=True,
+        ) as mock_forward,
+        patch.object(
+            hass.config_entries,
+            "async_unload_platforms",
+            return_value=True,
+        ) as mock_unload,
+    ):
+        mock_client = mock_client_cls.return_value
+        mock_client.async_get_current_user = AsyncMock(return_value=MOCK_USER)
+        mock_client.async_get_observees = AsyncMock(return_value=[MOCK_STUDENT])
+        mock_client.async_get_student_courses = AsyncMock(return_value=[])
+        mock_client.async_get_student_submissions = AsyncMock(return_value=[])
+        mock_client.async_get_student_assignments = AsyncMock(return_value=[])
+
+        setup_result = await async_setup_entry(hass, mock_config_entry)
+        await hass.async_block_till_done()
+
+        assert setup_result is True
+        assert len(mock_forward.mock_calls) == 1
+
+        unload_result = await async_unload_entry(hass, mock_config_entry)
+        await hass.async_block_till_done()
+
+        assert unload_result is True
+        assert len(mock_unload.mock_calls) == 1

@@ -641,20 +641,94 @@ async def test_reauth_flow_account_mismatch(
         assert errors is not None and "base" in errors
 
 
+async def test_reconfigure_flow_success(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test successful reconfiguration of URL and token."""
+    mock_config_entry.add_to_hass(hass)
+    result = await mock_config_entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+
+    with patch(
+        "custom_components.canvas.config_flow.CanvasApiClient",
+        autospec=True,
+    ) as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.async_get_current_user = AsyncMock(return_value=MOCK_USER)
+
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_BASE_URL: "https://new-canvas.example.edu",
+                CONF_ACCESS_TOKEN: "new_token",
+            },
+        )
+
+    assert result2["type"] is FlowResultType.ABORT
+    assert (
+        result2["reason"] == "reauth_successful"
+        or result2["reason"] == "reconfigure_successful"
+    )
+    assert mock_config_entry.data[CONF_BASE_URL] == "https://new-canvas.example.edu"
+    assert mock_config_entry.data[CONF_ACCESS_TOKEN] == "new_token"
+
+
+async def test_reconfigure_flow_validation_error(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test reconfiguration with invalid credentials redisplays form with error."""
+    mock_config_entry.add_to_hass(hass)
+    result = await mock_config_entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+
+    with patch(
+        "custom_components.canvas.config_flow.CanvasApiClient",
+        autospec=True,
+    ) as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.async_get_current_user = AsyncMock(
+            side_effect=CanvasAuthError("401 Unauthorized")
+        )
+
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_BASE_URL: "https://new-canvas.example.edu",
+                CONF_ACCESS_TOKEN: "invalid_token",
+            },
+        )
+
+    assert result2["type"] is FlowResultType.FORM
+    assert result2["step_id"] == "reconfigure"
+    assert result2["errors"] == {"base": "invalid_auth"}
+
+
 async def test_options_flow_handler(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Test options flow handler initializes and completes."""
     result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
 
-    # If options flow is supported, verify form or create entry
-    if result["type"] is FlowResultType.FORM:
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"],
-            user_input={},
-        )
-        assert result["type"] in (
-            FlowResultType.CREATE_ENTRY,
-            FlowResultType.FORM,
-        )
+    result2 = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={},
+    )
+    assert result2["type"] is FlowResultType.CREATE_ENTRY
+    assert result2["data"] == {}
+
+
+def test_get_entry_title_fallback_when_host_empty() -> None:
+    """Test _get_entry_title falls back to user name when host is empty."""
+    from custom_components.canvas.config_flow import _get_entry_title
+
+    user = CanvasUser(id=12345, name="John Doe")
+    assert _get_entry_title(user, "") == "John Doe"
+
+    user_no_name = CanvasUser(id=12345, name="")
+    assert _get_entry_title(user_no_name, "") == "User 12345"

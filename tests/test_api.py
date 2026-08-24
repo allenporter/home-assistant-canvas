@@ -230,6 +230,21 @@ class TestCoreEndpoints:
         with pytest.raises(CanvasResponseError, match="Expected user profile object"):
             await client.async_get_current_user()
 
+    async def test_async_get_current_user_malformed_dict_raises(
+        self, hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+    ) -> None:
+        """Test async_get_current_user raises CanvasResponseError when dict is missing required id."""
+        session = async_get_clientsession(hass)
+        client = CanvasApiClient(TEST_BASE_URL, TEST_ACCESS_TOKEN, session)
+
+        aioclient_mock.get(
+            f"{TEST_BASE_URL}{ENDPOINT_USERS_SELF}",
+            json={"name": "No ID User"},
+        )
+
+        with pytest.raises(CanvasResponseError, match="Malformed user profile object"):
+            await client.async_get_current_user()
+
     async def test_async_get_observees_success(
         self, hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
     ) -> None:
