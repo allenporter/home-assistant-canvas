@@ -240,7 +240,7 @@ async def test_user_flow_different_user_creates_second_entry(
         await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "Jane Doe"
+    assert result["title"] == "canvas.example.edu"
     assert result["result"].unique_id == "99999"
 
 

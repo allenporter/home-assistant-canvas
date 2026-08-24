@@ -79,7 +79,7 @@ async def test_user_flow_success(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == TEST_USER_NAME
+    assert result["title"] == "canvas.example.edu"
     assert result["data"] == {
         CONF_BASE_URL: TEST_BASE_URL,
         CONF_ACCESS_TOKEN: TEST_ACCESS_TOKEN,
@@ -274,7 +274,7 @@ async def test_user_flow_recovery_after_error(hass: HomeAssistant) -> None:
             await hass.async_block_till_done()
 
         assert result2["type"] is FlowResultType.CREATE_ENTRY
-        assert result2["title"] == TEST_USER_NAME
+        assert result2["title"] == "canvas.example.edu"
         assert result2["data"][CONF_ACCESS_TOKEN] == TEST_ACCESS_TOKEN
 
 
@@ -530,7 +530,7 @@ async def test_user_flow_unicode_name_preserved(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "José-María & François Noël (山田太郎)"
+    assert result["title"] == "canvas.example.edu"
     assert result["result"].unique_id == "88888"
 
 
@@ -562,14 +562,14 @@ async def test_user_flow_empty_name_fallback_title(hass: HomeAssistant) -> None:
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {
-                CONF_BASE_URL: TEST_BASE_URL,
+                CONF_BASE_URL: "https://seattle.instructure.com",
                 CONF_ACCESS_TOKEN: TEST_ACCESS_TOKEN,
             },
         )
         await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert "77777" in result["title"]
+    assert result["title"] == "seattle.instructure.com"
 
 
 async def test_reauth_flow_cannot_connect(

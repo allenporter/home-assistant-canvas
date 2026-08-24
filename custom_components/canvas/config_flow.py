@@ -6,6 +6,8 @@ from collections.abc import Mapping
 import logging
 from typing import Any
 
+from urllib.parse import urlparse
+
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -48,6 +50,15 @@ def _normalize_url(raw_url: str) -> str:
     if not url.lower().startswith(("http://", "https://")):
         url = f"https://{url}"
     return url
+
+
+def _get_entry_title(user: CanvasUser, base_url: str) -> str:
+    """Generate config entry title using the school host name."""
+    parsed = urlparse(base_url)
+    host = parsed.netloc or parsed.path.strip("/")
+    if host:
+        return host
+    return user.name.strip() if user.name and user.name.strip() else f"User {user.id}"
 
 
 class CanvasConfigFlowHandler(ConfigFlow, domain=DOMAIN):
@@ -95,11 +106,7 @@ class CanvasConfigFlowHandler(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(str(user.id))
                 self._abort_if_unique_id_configured()
 
-                title = (
-                    user.name.strip()
-                    if user.name and user.name.strip()
-                    else f"User {user.id}"
-                )
+                title = _get_entry_title(user, normalized_url)
                 return self.async_create_entry(
                     title=title,
                     data={
