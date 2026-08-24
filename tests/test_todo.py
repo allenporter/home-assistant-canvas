@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from homeassistant.components.todo import (
     TodoItem,
@@ -105,6 +106,17 @@ def _setup_dual_student_routes(aioclient_mock: AiohttpClientMocker) -> None:
     )
 
 
+def _extract_items(response: Any, entity_id: str) -> list[dict[str, Any]]:
+    """Extract item list from a service response dictionary."""
+    if not isinstance(response, dict):
+        return []
+    entity_data = response.get(entity_id, {})
+    if not isinstance(entity_data, dict):
+        return []
+    items = entity_data.get("items", [])
+    return list(items) if isinstance(items, list) else []
+
+
 async def test_todo_entities_and_device_registry_dual_students(
     hass: HomeAssistant,
     aioclient_mock: AiohttpClientMocker,
@@ -168,7 +180,7 @@ async def test_todo_items_projection_and_attributes(
         blocking=True,
         return_response=True,
     )
-    items = response.get("todo.quentin_porter_assignments", {}).get("items", [])
+    items = _extract_items(response, "todo.quentin_porter_assignments")
     assert len(items) == 1
     assert items[0]["uid"] == "134664"
     assert items[0]["summary"] == "[AP US History] Chapter 1 Reflection"
@@ -212,6 +224,7 @@ async def test_todo_local_completion_preserved_across_coordinator_updates(
 
     # Verify state remains 0 (completed assignment does not resurrect)
     state = hass.states.get("todo.quentin_porter_assignments")
+    assert state is not None
     assert state.state == "0"
 
     response = await hass.services.async_call(
@@ -221,9 +234,7 @@ async def test_todo_local_completion_preserved_across_coordinator_updates(
         blocking=True,
         return_response=True,
     )
-    completed_items = response.get("todo.quentin_porter_assignments", {}).get(
-        "items", []
-    )
+    completed_items = _extract_items(response, "todo.quentin_porter_assignments")
     assert len(completed_items) == 1
     assert completed_items[0]["uid"] == "134664"
 
@@ -240,6 +251,7 @@ async def test_todo_local_completion_preserved_across_coordinator_updates(
     )
     await hass.async_block_till_done()
     state = hass.states.get("todo.quentin_porter_assignments")
+    assert state is not None
     assert state.state == "1"
 
 
@@ -269,6 +281,7 @@ async def test_todo_manual_item_creation_update_and_deletion(
     await hass.async_block_till_done()
 
     state = hass.states.get("todo.quentin_porter_assignments")
+    assert state is not None
     assert state.state == "2"  # 1 Canvas + 1 manual
 
     response = await hass.services.async_call(
@@ -278,7 +291,7 @@ async def test_todo_manual_item_creation_update_and_deletion(
         blocking=True,
         return_response=True,
     )
-    items = response.get("todo.quentin_porter_assignments", {}).get("items", [])
+    items = _extract_items(response, "todo.quentin_porter_assignments")
     assert len(items) == 2
     manual_item = [
         i for i in items if i["summary"] == "Buy poster board for science fair"
@@ -300,6 +313,7 @@ async def test_todo_manual_item_creation_update_and_deletion(
     await hass.async_block_till_done()
 
     state = hass.states.get("todo.quentin_porter_assignments")
+    assert state is not None
     assert state.state == "1"
 
     # Delete the manual task
@@ -315,6 +329,7 @@ async def test_todo_manual_item_creation_update_and_deletion(
     await hass.async_block_till_done()
 
     state = hass.states.get("todo.quentin_porter_assignments")
+    assert state is not None
     assert state.state == "1"
 
 
@@ -330,6 +345,7 @@ async def test_todo_delete_canvas_synced_item(
     await hass.async_block_till_done()
 
     state = hass.states.get("todo.quentin_porter_assignments")
+    assert state is not None
     assert state.state == "1"
 
     # Delete Canvas assignment
@@ -345,6 +361,7 @@ async def test_todo_delete_canvas_synced_item(
     await hass.async_block_till_done()
 
     state = hass.states.get("todo.quentin_porter_assignments")
+    assert state is not None
     assert state.state == "0"
 
     # Trigger coordinator refresh; deleted item stays deleted
@@ -353,6 +370,7 @@ async def test_todo_delete_canvas_synced_item(
     await hass.async_block_till_done()
 
     state = hass.states.get("todo.quentin_porter_assignments")
+    assert state is not None
     assert state.state == "0"
 
 
@@ -388,7 +406,7 @@ async def test_todo_custom_item_overrides_on_canvas_assignment(
         blocking=True,
         return_response=True,
     )
-    items = response.get("todo.quentin_porter_assignments", {}).get("items", [])
+    items = _extract_items(response, "todo.quentin_porter_assignments")
     assert len(items) == 1
     assert items[0]["summary"] == "[AP US History] Ch 1 Reflection (Typed)"
     assert items[0]["description"] == "Updated notes"
@@ -496,3 +514,79 @@ async def test_todo_entity_unit_edge_cases(
     )
     canvas_item = [i for i in entity.todo_items if i.uid == "134664"][0]
     assert canvas_item.due == new_due
+
+
+async def test_todo_state_restoration_on_startup(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test restoring completed and manual items across Home Assistant restarts."""
+    from homeassistant.core import State
+    from pytest_homeassistant_custom_component.common import (
+        mock_restore_cache_with_extra_data,
+    )
+    from custom_components.canvas.todo import CanvasTodoListExtraStoredData
+
+    _setup_dual_student_routes(aioclient_mock)
+
+    extra_data = CanvasTodoListExtraStoredData(
+        completed_uids=["134664"],
+        deleted_uids=["999999"],
+        custom_overrides={
+            "134664": {"summary": "[AP US History] Custom Restored Title"}
+        },
+        manual_items=[
+            {
+                "uid": "restored_manual_1",
+                "summary": "Restored Task",
+                "status": "needs_action",
+                "due": "2026-09-15T10:00:00+00:00",
+                "description": "Restored note",
+            },
+            {
+                "uid": "restored_invalid_due",
+                "summary": "Task with invalid due",
+                "status": "needs_action",
+                "due": "invalid-datetime-format",
+            },
+            {
+                "uid": "",
+                "summary": "No UID item",
+            },
+        ],
+    )
+
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State("todo.quentin_porter_assignments", "1"),
+                extra_data.as_dict(),
+            )
+        ],
+    )
+
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity = hass.data["entity_components"]["todo"].get_entity(
+        "todo.quentin_porter_assignments"
+    )
+    assert entity is not None
+    assert entity.extra_restore_state_data is not None
+    stored_dict = entity.extra_restore_state_data.as_dict()
+    assert "134664" in stored_dict["completed_uids"]
+
+    # Check from_dict helper
+    reconstructed = CanvasTodoListExtraStoredData.from_dict(stored_dict)
+    assert reconstructed.completed_uids == ["134664"]
+
+    items = entity.todo_items or []
+    canvas_item = [i for i in items if i.uid == "134664"][0]
+    assert canvas_item.status == TodoItemStatus.COMPLETED
+    assert canvas_item.summary == "[AP US History] Custom Restored Title"
+
+    manual_item = [i for i in items if i.uid == "restored_manual_1"][0]
+    assert manual_item.summary == "Restored Task"
+    assert manual_item.due == datetime(2026, 9, 15, 10, 0, 0, tzinfo=timezone.utc)

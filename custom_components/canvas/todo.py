@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 import logging
-from typing import Any
+from typing import Any, Self
 from uuid import uuid4
 
 from homeassistant.components.todo import (
@@ -17,6 +17,7 @@ from homeassistant.components.todo import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import CanvasConfigEntry
@@ -48,8 +49,37 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
+@dataclass
+class CanvasTodoListExtraStoredData(ExtraStoredData):
+    """Extra stored data for Canvas todo list entity across restarts."""
+
+    completed_uids: list[str]
+    deleted_uids: list[str]
+    custom_overrides: dict[str, Any]
+    manual_items: list[dict[str, Any]]
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return dict representation for storage."""
+        return {
+            "completed_uids": list(self.completed_uids),
+            "deleted_uids": list(self.deleted_uids),
+            "custom_overrides": dict(self.custom_overrides),
+            "manual_items": list(self.manual_items),
+        }
+
+    @classmethod
+    def from_dict(cls, restored: dict[str, Any]) -> Self:
+        """Initialize from restored dictionary."""
+        return cls(
+            completed_uids=list(restored.get("completed_uids", [])),
+            deleted_uids=list(restored.get("deleted_uids", [])),
+            custom_overrides=dict(restored.get("custom_overrides", {})),
+            manual_items=list(restored.get("manual_items", [])),
+        )
+
+
 class CanvasTodoListEntity(
-    CoordinatorEntity[CanvasDataUpdateCoordinator], TodoListEntity
+    CoordinatorEntity[CanvasDataUpdateCoordinator], TodoListEntity, RestoreEntity
 ):
     """Interactive To-Do List entity for a Canvas student."""
 
@@ -91,6 +121,58 @@ class CanvasTodoListEntity(
         self._manual_items: dict[str, TodoItem] = {}
 
         self._update_todo_items()
+
+    @property
+    def extra_restore_state_data(self) -> CanvasTodoListExtraStoredData:
+        """Return extra state data to persist across restarts."""
+        return CanvasTodoListExtraStoredData(
+            completed_uids=list(self._completed_uids),
+            deleted_uids=list(self._deleted_uids),
+            custom_overrides=self._custom_item_overrides,
+            manual_items=[
+                {
+                    "uid": item.uid,
+                    "summary": item.summary,
+                    "status": item.status,
+                    "due": item.due.isoformat() if item.due else None,
+                    "description": item.description,
+                }
+                for item in self._manual_items.values()
+            ],
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Restore previous state and subscribe to coordinator updates."""
+        await super().async_added_to_hass()
+
+        if (last_extra_data := await self.async_get_last_extra_data()) is not None:
+            extra_data = CanvasTodoListExtraStoredData.from_dict(
+                last_extra_data.as_dict()
+            )
+            self._completed_uids = set(extra_data.completed_uids)
+            self._deleted_uids = set(extra_data.deleted_uids)
+            self._custom_item_overrides = dict(extra_data.custom_overrides)
+
+            for raw_item in extra_data.manual_items:
+                due_val = raw_item.get("due")
+                due: datetime | date | None = None
+                if due_val:
+                    try:
+                        due = datetime.fromisoformat(due_val)
+                    except ValueError:
+                        due = None
+                item = TodoItem(
+                    uid=raw_item.get("uid"),
+                    summary=raw_item.get("summary", ""),
+                    status=raw_item.get("status", TodoItemStatus.NEEDS_ACTION),
+                    due=due,
+                    description=raw_item.get("description"),
+                )
+                if item.uid:
+                    self._manual_items[item.uid] = item
+
+            self._update_todo_items()
+            self.async_write_ha_state()
 
     @property
     def todo_items(self) -> list[TodoItem] | None:
