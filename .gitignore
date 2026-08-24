@@ -15,3 +15,9 @@ tmp
 .env.*
 !.env.example
 test_canvas_api.py
+.agents/
+scratch/
+coverage.json
+ORIGINAL_REQUEST.md
+PROJECT.md
+TEST_INFRA.md
