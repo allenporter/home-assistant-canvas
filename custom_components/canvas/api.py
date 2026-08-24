@@ -263,7 +263,12 @@ class CanvasApiClient:
         payload, _ = await self._async_request("GET", ENDPOINT_USERS_SELF)
         if not isinstance(payload, dict):
             raise CanvasResponseError("Expected user profile object from Canvas API")
-        return CanvasUser.from_dict(payload)
+        try:
+            return CanvasUser.from_dict(payload)
+        except (KeyError, TypeError, ValueError) as err:
+            raise CanvasResponseError(
+                f"Malformed user profile object from Canvas API: {err}"
+            ) from err
 
     async def async_get_observees(self) -> list[CanvasObservee]:
         """Retrieve all linked students (observees) for the parent account."""

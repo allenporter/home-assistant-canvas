@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 import logging
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -25,8 +23,8 @@ from .exceptions import (
     CanvasAuthError,
     CanvasConnectionError,
     CanvasError,
-    CanvasRateLimitError,
 )
+from .models import CanvasUser
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,6 +56,28 @@ class CanvasConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     VERSION = 1
     MINOR_VERSION = 1
 
+    async def _async_validate_and_get_user(
+        self, base_url: str, access_token: str
+    ) -> tuple[CanvasUser | None, dict[str, str]]:
+        """Validate credentials against Canvas LMS API and return user or error mapping."""
+        errors: dict[str, str] = {}
+        try:
+            session = async_get_clientsession(self.hass)
+            client = CanvasApiClient(
+                base_url=base_url,
+                access_token=access_token,
+                session=session,
+            )
+            user = await client.async_get_current_user()
+            return user, errors
+        except CanvasAuthError:
+            errors["base"] = "invalid_auth"
+        except (CanvasConnectionError, TimeoutError):
+            errors["base"] = "cannot_connect"
+        except (CanvasError, Exception):
+            errors["base"] = "unknown"
+        return None, errors
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -68,27 +88,10 @@ class CanvasConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             normalized_url = _normalize_url(user_input[CONF_BASE_URL])
             token = user_input[CONF_ACCESS_TOKEN].strip()
 
-            try:
-                session = async_get_clientsession(self.hass)
-                client = CanvasApiClient(
-                    base_url=normalized_url,
-                    access_token=token,
-                    session=session,
-                )
-                user = await client.async_get_current_user()
-            except CanvasAuthError:
-                errors["base"] = "invalid_auth"
-            except (
-                CanvasConnectionError,
-                CanvasRateLimitError,
-                TimeoutError,
-                asyncio.TimeoutError,
-                aiohttp.ClientError,
-            ):
-                errors["base"] = "cannot_connect"
-            except (CanvasError, Exception):
-                errors["base"] = "unknown"
-            else:
+            user, errors = await self._async_validate_and_get_user(
+                normalized_url, token
+            )
+            if user is not None:
                 await self.async_set_unique_id(str(user.id))
                 self._abort_if_unique_id_configured()
 
@@ -130,27 +133,8 @@ class CanvasConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             token = user_input[CONF_ACCESS_TOKEN].strip()
             base_url = reauth_entry.data[CONF_BASE_URL]
 
-            try:
-                session = async_get_clientsession(self.hass)
-                client = CanvasApiClient(
-                    base_url=base_url,
-                    access_token=token,
-                    session=session,
-                )
-                user = await client.async_get_current_user()
-            except CanvasAuthError:
-                errors["base"] = "invalid_auth"
-            except (
-                CanvasConnectionError,
-                CanvasRateLimitError,
-                TimeoutError,
-                asyncio.TimeoutError,
-                aiohttp.ClientError,
-            ):
-                errors["base"] = "cannot_connect"
-            except (CanvasError, Exception):
-                errors["base"] = "unknown"
-            else:
+            user, errors = await self._async_validate_and_get_user(base_url, token)
+            if user is not None:
                 if str(user.id) != reauth_entry.unique_id:
                     return self.async_abort(reason="reauth_account_mismatch")
 
@@ -176,27 +160,10 @@ class CanvasConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             normalized_url = _normalize_url(user_input[CONF_BASE_URL])
             token = user_input[CONF_ACCESS_TOKEN].strip()
 
-            try:
-                session = async_get_clientsession(self.hass)
-                client = CanvasApiClient(
-                    base_url=normalized_url,
-                    access_token=token,
-                    session=session,
-                )
-                user = await client.async_get_current_user()
-            except CanvasAuthError:
-                errors["base"] = "invalid_auth"
-            except (
-                CanvasConnectionError,
-                CanvasRateLimitError,
-                TimeoutError,
-                asyncio.TimeoutError,
-                aiohttp.ClientError,
-            ):
-                errors["base"] = "cannot_connect"
-            except (CanvasError, Exception):
-                errors["base"] = "unknown"
-            else:
+            user, errors = await self._async_validate_and_get_user(
+                normalized_url, token
+            )
+            if user is not None:
                 if str(user.id) != reconfigure_entry.unique_id:
                     return self.async_abort(reason="reauth_account_mismatch")
 

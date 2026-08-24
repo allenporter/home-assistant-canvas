@@ -17,7 +17,7 @@ class CanvasConnectionError(CanvasError):
     """Exception raised when network connection to Canvas LMS fails or times out."""
 
 
-class CanvasRateLimitError(CanvasError):
+class CanvasRateLimitError(CanvasConnectionError):
     """Exception raised when Canvas LMS API rate limits are exceeded."""
 
 

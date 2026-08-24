@@ -16,8 +16,6 @@ from .exceptions import (
     CanvasAuthError,
     CanvasConnectionError,
     CanvasError,
-    CanvasRateLimitError,
-    CanvasResponseError,
 )
 from .filtering import filter_active_courses, filter_pending_assignments
 from .models import (
@@ -113,10 +111,6 @@ class CanvasDataUpdateCoordinator(DataUpdateCoordinator[CanvasData]):
             raise ConfigEntryAuthFailed(err) from err
         except CanvasConnectionError as err:
             raise UpdateFailed(f"Connection error connecting to Canvas: {err}") from err
-        except CanvasRateLimitError as err:
-            raise UpdateFailed(f"Rate limit exceeded on Canvas API: {err}") from err
-        except CanvasResponseError as err:
-            raise UpdateFailed(f"Invalid response received from Canvas: {err}") from err
         except CanvasError as err:
             raise UpdateFailed(f"Canvas LMS error: {err}") from err
         except Exception as err:
