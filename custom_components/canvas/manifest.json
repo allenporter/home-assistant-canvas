@@ -1,0 +1,11 @@
+{
+  "domain": "canvas",
+  "name": "Canvas",
+  "codeowners": ["@allenporter"],
+  "config_flow": true,
+  "documentation": "https://github.com/allenporter/home-assistant-canvas",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/allenporter/home-assistant-canvas/issues",
+  "version": "0.0.1"
+}
