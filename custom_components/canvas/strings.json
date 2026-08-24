@@ -44,5 +44,12 @@
         "description": "Configure Canvas LMS integration options."
       }
     }
+  },
+  "entity": {
+    "todo": {
+      "assignments": {
+        "name": "Assignments"
+      }
+    }
   }
 }

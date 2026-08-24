@@ -79,10 +79,10 @@ async def test_async_setup_entry_success(
     """Test successful setup of Canvas LMS integration from config entry."""
     _setup_standard_mock_routes(aioclient_mock)
 
-    result = await async_setup_entry(hass, mock_config_entry)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
-    assert result is True
+    assert mock_config_entry.state is ConfigEntryState.LOADED
     assert hasattr(mock_config_entry, "runtime_data")
     assert mock_config_entry.runtime_data is not None
     assert isinstance(mock_config_entry.runtime_data, CanvasDataUpdateCoordinator)

@@ -17,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 
 type CanvasConfigEntry = ConfigEntry[CanvasDataUpdateCoordinator]
 
-PLATFORMS: list[Platform] = []
+PLATFORMS: list[Platform] = [Platform.TODO]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CanvasConfigEntry) -> bool:
@@ -36,8 +36,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CanvasConfigEntry) -> bo
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
-    if PLATFORMS:
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     return True
@@ -45,9 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CanvasConfigEntry) -> bo
 
 async def async_unload_entry(hass: HomeAssistant, entry: CanvasConfigEntry) -> bool:
     """Unload a Canvas LMS config entry."""
-    if PLATFORMS:
-        return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    return True
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: CanvasConfigEntry) -> None:
