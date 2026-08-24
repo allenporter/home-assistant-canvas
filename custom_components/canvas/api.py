@@ -84,8 +84,12 @@ class CanvasApiClient:
     ) -> None:
         """Initialize the Canvas API client."""
         url = base_url.strip().rstrip("/")
-        if not url.startswith(("http://", "https://")):
+        if not url.lower().startswith(("http://", "https://")):
             url = f"https://{url}"
+        if url.lower().startswith("https://"):
+            url = f"https://{url[8:]}"
+        else:
+            url = f"http://{url[7:]}"
         self._base_url = url
         self._access_token = access_token.strip()
         self._session = session

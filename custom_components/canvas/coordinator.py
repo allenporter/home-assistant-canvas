@@ -111,9 +111,5 @@ class CanvasDataUpdateCoordinator(DataUpdateCoordinator[CanvasData]):
             raise ConfigEntryAuthFailed(err) from err
         except CanvasConnectionError as err:
             raise UpdateFailed(f"Connection error connecting to Canvas: {err}") from err
-        except CanvasError as err:
+        except (CanvasError, Exception) as err:
             raise UpdateFailed(f"Canvas LMS error: {err}") from err
-        except Exception as err:
-            raise UpdateFailed(
-                f"Unexpected error communicating with Canvas: {err}"
-            ) from err

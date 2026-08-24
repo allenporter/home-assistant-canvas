@@ -279,6 +279,12 @@ def test_is_active_todo_assignment_workflow_state() -> None:
     )
     assert is_active_todo_assignment(asg_pub, course, now=FROZEN_NOW) is True
 
+    # Reject assignment belonging to a different course
+    asg_diff_course = CanvasAssignment(
+        id=1, course_id=999, name="Quiz 1", workflow_state="published"
+    )
+    assert is_active_todo_assignment(asg_diff_course, course, now=FROZEN_NOW) is False
+
     asg_unpub = CanvasAssignment(
         id=2, course_id=1, name="Draft Quiz", workflow_state="unpublished"
     )

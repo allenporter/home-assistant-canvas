@@ -49,6 +49,10 @@ def _normalize_url(raw_url: str) -> str:
     url = raw_url.strip().rstrip("/")
     if not url.lower().startswith(("http://", "https://")):
         url = f"https://{url}"
+    if url.lower().startswith("https://"):
+        url = f"https://{url[8:]}"
+    else:
+        url = f"http://{url[7:]}"
     return url
 
 

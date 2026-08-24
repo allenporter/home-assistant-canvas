@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -383,18 +382,3 @@ def fixture_config_entry(mock_config_entry: MockConfigEntry) -> MockConfigEntry:
 def mock_platforms() -> list[Platform]:
     """Fixture for platforms loaded by the integration."""
     return []
-
-
-@pytest.fixture(name="mock_canvas_client")
-def fixture_mock_canvas_client() -> AsyncMock:
-    """Fixture for a mocked CanvasApiClient."""
-    client = AsyncMock()
-    client.base_url = TEST_BASE_URL
-    client.access_token = TEST_ACCESS_TOKEN
-    client.async_get_current_user = AsyncMock(return_value=MOCK_USER_SELF_RESPONSE)
-    client.async_get_observees = AsyncMock(return_value=MOCK_OBSERVEES_RESPONSE)
-    client.async_get_student_courses = AsyncMock(return_value=MOCK_COURSES_RESPONSE)
-    client.async_get_student_submissions = AsyncMock(
-        return_value=MOCK_SUBMISSIONS_RESPONSE
-    )
-    return client

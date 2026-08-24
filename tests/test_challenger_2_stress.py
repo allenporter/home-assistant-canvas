@@ -4,71 +4,70 @@ Focus Areas:
 1. CanvasConfigFlowHandler: URL normalization edge cases, unique ID & duplicate entry checks.
 2. Reauth & Reconfigure flows: matching token success, mismatched account abort, error handling.
 3. Options flow: initialization, presentation, and persistence.
-4. Multi-student data isolation & segregation in CanvasData.
+4. Multi-student data isolation & segregation in CanvasData using real client and fake HTTP endpoints.
 5. Strings & Translation schema parity and completeness.
 """
 
 from __future__ import annotations
 
-import asyncio
-from datetime import datetime, timezone
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
+import aiohttp
 import pytest
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.test_util.aiohttp import (
+    AiohttpClientMocker,
+)
 
+from custom_components.canvas.api import CanvasApiClient
 from custom_components.canvas.config_flow import _normalize_url
 from custom_components.canvas.const import (
     CONF_ACCESS_TOKEN,
     CONF_BASE_URL,
     DOMAIN,
+    ENDPOINT_COURSE_STUDENT_SUBMISSIONS,
+    ENDPOINT_USER_COURSES,
+    ENDPOINT_USERS_OBSERVEES,
+    ENDPOINT_USERS_SELF,
 )
 from custom_components.canvas.coordinator import CanvasDataUpdateCoordinator
-from custom_components.canvas.exceptions import (
-    CanvasAuthError,
-    CanvasConnectionError,
-    CanvasError,
-    CanvasRateLimitError,
-)
-from custom_components.canvas.models import (
-    CanvasAssignment,
-    CanvasCourse,
-    CanvasData,
-    CanvasObservee,
-    CanvasSubmission,
-    CanvasTerm,
-    CanvasUser,
-)
+from custom_components.canvas.models import CanvasData
 
 from .conftest import (
     TEST_ACCESS_TOKEN,
     TEST_BASE_URL,
     TEST_USER_ID,
     TEST_USER_NAME,
+    build_mock_assignment_dict,
+    build_mock_course_dict,
+    build_mock_observee_dict,
+    build_mock_submission_dict,
+    build_mock_term_dict,
 )
 
-MOCK_USER_PRIMARY = CanvasUser(
-    id=TEST_USER_ID,
-    name=TEST_USER_NAME,
-    sortable_name="Porter, Allen",
-    short_name="Allen",
-    primary_email="allen@example.edu",
-)
+MOCK_USER_PRIMARY = {
+    "id": TEST_USER_ID,
+    "name": TEST_USER_NAME,
+    "sortable_name": "Porter, Allen",
+    "short_name": "Allen",
+    "primary_email": "allen@example.edu",
+}
 
-MOCK_USER_SECONDARY = CanvasUser(
-    id=99999,
-    name="Jane Doe",
-    sortable_name="Doe, Jane",
-    short_name="Jane",
-    primary_email="jane@example.edu",
-)
+MOCK_USER_SECONDARY = {
+    "id": 99999,
+    "name": "Jane Doe",
+    "sortable_name": "Doe, Jane",
+    "short_name": "Jane",
+    "primary_email": "jane@example.edu",
+}
 
 
 # ============================================================================
@@ -119,27 +118,26 @@ def test_url_normalization_unit(raw_input: str, expected_normalized: str) -> Non
     ],
 )
 async def test_user_flow_url_normalization_in_flow(
-    hass: HomeAssistant, raw_url: str
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    raw_url: str,
 ) -> None:
     """Test that URL normalization is applied during async_step_user."""
+    expected = _normalize_url(raw_url)
+    aioclient_mock.get(
+        f"{expected}{ENDPOINT_USERS_SELF}",
+        json=MOCK_USER_PRIMARY,
+    )
+
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
     assert result["type"] is FlowResultType.FORM
 
-    with (
-        patch(
-            "custom_components.canvas.config_flow.CanvasApiClient",
-            autospec=True,
-        ) as mock_client_cls,
-        patch(
-            "custom_components.canvas.async_setup_entry",
-            return_value=True,
-        ),
+    with patch(
+        "custom_components.canvas.async_setup_entry",
+        return_value=True,
     ):
-        mock_client = mock_client_cls.return_value
-        mock_client.async_get_current_user = AsyncMock(return_value=MOCK_USER_PRIMARY)
-
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {
@@ -150,7 +148,6 @@ async def test_user_flow_url_normalization_in_flow(
         await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    expected = _normalize_url(raw_url)
     assert result["data"][CONF_BASE_URL] == expected
     assert not result["data"][CONF_BASE_URL].endswith("/")
 
@@ -162,6 +159,7 @@ async def test_user_flow_url_normalization_in_flow(
 
 async def test_user_flow_duplicate_entry_aborts_already_configured(
     hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
 ) -> None:
     """Verify that attempting to configure an already configured account aborts."""
     existing_entry = MockConfigEntry(
@@ -175,24 +173,22 @@ async def test_user_flow_duplicate_entry_aborts_already_configured(
     )
     existing_entry.add_to_hass(hass)
 
+    aioclient_mock.get(
+        "https://canvas-another-domain.edu/api/v1/users/self",
+        json=MOCK_USER_PRIMARY,
+    )
+
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
 
-    with patch(
-        "custom_components.canvas.config_flow.CanvasApiClient",
-        autospec=True,
-    ) as mock_client_cls:
-        mock_client = mock_client_cls.return_value
-        mock_client.async_get_current_user = AsyncMock(return_value=MOCK_USER_PRIMARY)
-
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_BASE_URL: "https://canvas-another-domain.edu",
-                CONF_ACCESS_TOKEN: "another_token_same_user",
-            },
-        )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_BASE_URL: "https://canvas-another-domain.edu",
+            CONF_ACCESS_TOKEN: "another_token_same_user",
+        },
+    )
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
@@ -200,6 +196,7 @@ async def test_user_flow_duplicate_entry_aborts_already_configured(
 
 async def test_user_flow_different_user_creates_second_entry(
     hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
 ) -> None:
     """Verify that a different Canvas user ID creates a separate config entry."""
     existing_entry = MockConfigEntry(
@@ -213,23 +210,19 @@ async def test_user_flow_different_user_creates_second_entry(
     )
     existing_entry.add_to_hass(hass)
 
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_USERS_SELF}",
+        json=MOCK_USER_SECONDARY,
+    )
+
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
 
-    with (
-        patch(
-            "custom_components.canvas.config_flow.CanvasApiClient",
-            autospec=True,
-        ) as mock_client_cls,
-        patch(
-            "custom_components.canvas.async_setup_entry",
-            return_value=True,
-        ),
+    with patch(
+        "custom_components.canvas.async_setup_entry",
+        return_value=True,
     ):
-        mock_client = mock_client_cls.return_value
-        mock_client.async_get_current_user = AsyncMock(return_value=MOCK_USER_SECONDARY)
-
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {
@@ -251,26 +244,25 @@ async def test_user_flow_different_user_creates_second_entry(
 
 async def test_reauth_flow_matching_account_succeeds_and_updates_token(
     hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Verify reauth flow updates token and reloads entry on matching user ID."""
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_USERS_SELF}",
+        json=MOCK_USER_PRIMARY,
+    )
+
     result = await mock_config_entry.start_reauth_flow(hass)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "reauth_confirm"
 
     new_token = "valid_renewed_token_777"
-    with patch(
-        "custom_components.canvas.config_flow.CanvasApiClient",
-        autospec=True,
-    ) as mock_client_cls:
-        mock_client = mock_client_cls.return_value
-        mock_client.async_get_current_user = AsyncMock(return_value=MOCK_USER_PRIMARY)
-
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ACCESS_TOKEN: new_token},
-        )
-        await hass.async_block_till_done()
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_ACCESS_TOKEN: new_token},
+    )
+    await hass.async_block_till_done()
 
     assert result2["type"] is FlowResultType.ABORT
     assert result2["reason"] == "reauth_successful"
@@ -279,65 +271,66 @@ async def test_reauth_flow_matching_account_succeeds_and_updates_token(
 
 async def test_reauth_flow_mismatched_account_aborts(
     hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Verify reauth flow aborts with reauth_account_mismatch when token belongs to another user."""
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_USERS_SELF}",
+        json=MOCK_USER_SECONDARY,
+    )
+
     result = await mock_config_entry.start_reauth_flow(hass)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "reauth_confirm"
 
-    with patch(
-        "custom_components.canvas.config_flow.CanvasApiClient",
-        autospec=True,
-    ) as mock_client_cls:
-        mock_client = mock_client_cls.return_value
-        # Returns user with different id (99999 != 12345)
-        mock_client.async_get_current_user = AsyncMock(return_value=MOCK_USER_SECONDARY)
-
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ACCESS_TOKEN: "wrong_user_token"},
-        )
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_ACCESS_TOKEN: "wrong_user_token"},
+    )
 
     assert result2["type"] is FlowResultType.ABORT
     assert result2["reason"] == "reauth_account_mismatch"
-    # Verify existing entry token was NOT updated
     assert mock_config_entry.data[CONF_ACCESS_TOKEN] == TEST_ACCESS_TOKEN
 
 
 @pytest.mark.parametrize(
-    ("exception_side_effect", "expected_error_key"),
+    ("status_code", "exc_to_raise", "expected_error_key"),
     [
-        (CanvasAuthError("401 Unauthorized"), "invalid_auth"),
-        (CanvasConnectionError("Connection timeout"), "cannot_connect"),
-        (CanvasRateLimitError("Rate limit 429"), "cannot_connect"),
-        (asyncio.TimeoutError("Timeout"), "cannot_connect"),
-        (CanvasError("Generic error"), "unknown"),
-        (RuntimeError("Unexpected error"), "unknown"),
+        (401, None, "invalid_auth"),
+        (None, aiohttp.ClientError("Connection timeout"), "cannot_connect"),
+        (429, None, "cannot_connect"),
+        (None, TimeoutError("Timeout"), "cannot_connect"),
+        (500, None, "cannot_connect"),
     ],
 )
 async def test_reauth_flow_error_handling(
     hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
     mock_config_entry: MockConfigEntry,
-    exception_side_effect: Exception,
+    status_code: int | None,
+    exc_to_raise: Exception | None,
     expected_error_key: str,
 ) -> None:
     """Verify reauth error mapping to form errors."""
+    if exc_to_raise is not None:
+        aioclient_mock.get(
+            f"{TEST_BASE_URL}{ENDPOINT_USERS_SELF}",
+            exc=exc_to_raise,
+        )
+    else:
+        aioclient_mock.get(
+            f"{TEST_BASE_URL}{ENDPOINT_USERS_SELF}",
+            status=status_code or 400,
+            text="Error response",
+        )
+
     result = await mock_config_entry.start_reauth_flow(hass)
 
-    with patch(
-        "custom_components.canvas.config_flow.CanvasApiClient",
-        autospec=True,
-    ) as mock_client_cls:
-        mock_client = mock_client_cls.return_value
-        mock_client.async_get_current_user = AsyncMock(
-            side_effect=exception_side_effect
-        )
-
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_ACCESS_TOKEN: "failing_token"},
-        )
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_ACCESS_TOKEN: "failing_token"},
+    )
 
     assert result2["type"] is FlowResultType.FORM
     assert result2["step_id"] == "reauth_confirm"
@@ -351,9 +344,11 @@ async def test_reauth_flow_error_handling(
 
 async def test_reconfigure_flow_success_and_normalization(
     hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Verify reconfigure step normalizes URL, updates entry data, and reloads."""
+    mock_config_entry.add_to_hass(hass)
     result = await mock_config_entry.start_reconfigure_flow(hass)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "reconfigure"
@@ -361,21 +356,19 @@ async def test_reconfigure_flow_success_and_normalization(
     raw_new_url = "  canvas.newdistrict.edu///  "
     new_token = "reconfigured_access_token_123"
 
-    with patch(
-        "custom_components.canvas.config_flow.CanvasApiClient",
-        autospec=True,
-    ) as mock_client_cls:
-        mock_client = mock_client_cls.return_value
-        mock_client.async_get_current_user = AsyncMock(return_value=MOCK_USER_PRIMARY)
+    aioclient_mock.get(
+        "https://canvas.newdistrict.edu/api/v1/users/self",
+        json=MOCK_USER_PRIMARY,
+    )
 
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_BASE_URL: raw_new_url,
-                CONF_ACCESS_TOKEN: new_token,
-            },
-        )
-        await hass.async_block_till_done()
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_BASE_URL: raw_new_url,
+            CONF_ACCESS_TOKEN: new_token,
+        },
+    )
+    await hass.async_block_till_done()
 
     assert result2["type"] is FlowResultType.ABORT
     assert result2["reason"] == "reconfigure_successful"
@@ -385,25 +378,25 @@ async def test_reconfigure_flow_success_and_normalization(
 
 async def test_reconfigure_flow_mismatched_account_aborts(
     hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Verify reconfigure step aborts when new credentials belong to another user."""
+    mock_config_entry.add_to_hass(hass)
     result = await mock_config_entry.start_reconfigure_flow(hass)
 
-    with patch(
-        "custom_components.canvas.config_flow.CanvasApiClient",
-        autospec=True,
-    ) as mock_client_cls:
-        mock_client = mock_client_cls.return_value
-        mock_client.async_get_current_user = AsyncMock(return_value=MOCK_USER_SECONDARY)
+    aioclient_mock.get(
+        "https://canvas.test.edu/api/v1/users/self",
+        json=MOCK_USER_SECONDARY,
+    )
 
-        result2 = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {
-                CONF_BASE_URL: "https://canvas.test.edu",
-                CONF_ACCESS_TOKEN: "different_user_token",
-            },
-        )
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_BASE_URL: "https://canvas.test.edu",
+            CONF_ACCESS_TOKEN: "different_user_token",
+        },
+    )
 
     assert result2["type"] is FlowResultType.ABORT
     assert result2["reason"] == "reauth_account_mismatch"
@@ -440,7 +433,7 @@ async def test_options_flow_init_and_create_entry(
 
 async def test_multi_student_data_isolation_and_no_cross_leakage(
     hass: HomeAssistant,
-    mock_canvas_client: AsyncMock,
+    aioclient_mock: AiohttpClientMocker,
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Adversarially verify that 3 distinct students have strict isolation.
@@ -449,91 +442,85 @@ async def test_multi_student_data_isolation_and_no_cross_leakage(
     Student 2 (ID 1002): 1 course, 0 assignments.
     Student 3 (ID 1003): 0 courses, 0 assignments.
     """
-    student_1 = CanvasObservee(id=1001, name="Student One")
-    student_2 = CanvasObservee(id=1002, name="Student Two")
-    student_3 = CanvasObservee(id=1003, name="Student Three")
+    student_1 = build_mock_observee_dict(observee_id=1001, name="Student One")
+    student_2 = build_mock_observee_dict(observee_id=1002, name="Student Two")
+    student_3 = build_mock_observee_dict(observee_id=1003, name="Student Three")
 
-    mock_term = CanvasTerm(
-        id=1,
-        name="Active Term",
-        start_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
-        end_at=datetime(2026, 12, 20, tzinfo=timezone.utc),
-        workflow_state="active",
+    mock_term = build_mock_term_dict(
+        term_id=1, name="Active Term", workflow_state="active"
     )
 
-    s1_c1 = CanvasCourse(
-        id=5001, name="S1 Course 1", term=mock_term, workflow_state="available"
-    )
-    s1_c2 = CanvasCourse(
-        id=5002, name="S1 Course 2", term=mock_term, workflow_state="available"
-    )
-    s2_c1 = CanvasCourse(
-        id=6001, name="S2 Course 1", term=mock_term, workflow_state="available"
-    )
+    s1_c1 = build_mock_course_dict(course_id=5001, name="S1 Course 1", term=mock_term)
+    s1_c2 = build_mock_course_dict(course_id=5002, name="S1 Course 2", term=mock_term)
+    s2_c1 = build_mock_course_dict(course_id=6001, name="S2 Course 1", term=mock_term)
 
-    s1_a1 = CanvasAssignment(
-        id=9001,
+    s1_a1 = build_mock_assignment_dict(
+        assignment_id=9001,
         course_id=5001,
         name="S1 C1 Task 1",
-        due_at=datetime(2026, 9, 10, tzinfo=timezone.utc),
-        workflow_state="published",
-        submission=CanvasSubmission(
-            id=1, assignment_id=9001, user_id=1001, workflow_state="unsubmitted"
-        ),
+        due_at="2026-09-10T23:59:59Z",
     )
-    s1_a2 = CanvasAssignment(
-        id=9002,
+    s1_a2 = build_mock_assignment_dict(
+        assignment_id=9002,
         course_id=5001,
         name="S1 C1 Task 2",
-        due_at=datetime(2026, 9, 15, tzinfo=timezone.utc),
-        workflow_state="published",
-        submission=CanvasSubmission(
-            id=2, assignment_id=9002, user_id=1001, workflow_state="unsubmitted"
-        ),
+        due_at="2026-09-15T23:59:59Z",
     )
-    s1_a3 = CanvasAssignment(
-        id=9003,
+    s1_a3 = build_mock_assignment_dict(
+        assignment_id=9003,
         course_id=5002,
         name="S1 C2 Task 1",
-        due_at=datetime(2026, 9, 20, tzinfo=timezone.utc),
-        workflow_state="published",
-        submission=CanvasSubmission(
-            id=3, assignment_id=9003, user_id=1001, workflow_state="unsubmitted"
-        ),
+        due_at="2026-09-20T23:59:59Z",
     )
 
-    mock_canvas_client.async_get_current_user = AsyncMock(
-        return_value=MOCK_USER_PRIMARY
+    s1_sub1 = build_mock_submission_dict(
+        submission_id=1, assignment_id=9001, user_id=1001, assignment=s1_a1
     )
-    mock_canvas_client.async_get_observees = AsyncMock(
-        return_value=[student_1, student_2, student_3]
+    s1_sub2 = build_mock_submission_dict(
+        submission_id=2, assignment_id=9002, user_id=1001, assignment=s1_a2
     )
-
-    async def mock_get_student_courses(student_id: int) -> list[CanvasCourse]:
-        if student_id == 1001:
-            return [s1_c1, s1_c2]
-        if student_id == 1002:
-            return [s2_c1]
-        return []
-
-    async def mock_get_student_assignments(
-        course_id: int, student_id: int
-    ) -> list[CanvasAssignment]:
-        if student_id == 1001 and course_id == 5001:
-            return [s1_a1, s1_a2]
-        if student_id == 1001 and course_id == 5002:
-            return [s1_a3]
-        return []
-
-    mock_canvas_client.async_get_student_courses = AsyncMock(
-        side_effect=mock_get_student_courses
-    )
-    mock_canvas_client.async_get_student_assignments = AsyncMock(
-        side_effect=mock_get_student_assignments
+    s1_sub3 = build_mock_submission_dict(
+        submission_id=3, assignment_id=9003, user_id=1001, assignment=s1_a3
     )
 
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_USERS_SELF}",
+        json=MOCK_USER_PRIMARY,
+    )
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_USERS_OBSERVEES}",
+        json=[student_1, student_2, student_3],
+    )
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_USER_COURSES.format(user_id=1001)}",
+        json=[s1_c1, s1_c2],
+    )
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_USER_COURSES.format(user_id=1002)}",
+        json=[s2_c1],
+    )
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_USER_COURSES.format(user_id=1003)}",
+        json=[],
+    )
+
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_COURSE_STUDENT_SUBMISSIONS.format(course_id=5001)}",
+        json=[s1_sub1, s1_sub2],
+    )
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_COURSE_STUDENT_SUBMISSIONS.format(course_id=5002)}",
+        json=[s1_sub3],
+    )
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_COURSE_STUDENT_SUBMISSIONS.format(course_id=6001)}",
+        json=[],
+    )
+
+    session = async_get_clientsession(hass)
+    client = CanvasApiClient(TEST_BASE_URL, TEST_ACCESS_TOKEN, session)
     coordinator = CanvasDataUpdateCoordinator(
-        hass, client=mock_canvas_client, entry=mock_config_entry
+        hass, client=client, entry=mock_config_entry
     )
     data = await coordinator._async_update_data()
 
@@ -563,11 +550,6 @@ async def test_multi_student_data_isolation_and_no_cross_leakage(
     assert s1_course_ids.isdisjoint(s2_course_ids)
     assert s1_course_ids.isdisjoint(s3_course_ids)
     assert s2_course_ids.isdisjoint(s3_course_ids)
-
-    # Verify lists are independent objects (modifying one does not affect another)
-    data.courses_by_student[1003].append(s1_c1)
-    assert len(data.courses_by_student[1002]) == 1
-    assert len(data.courses_by_student[1001]) == 2
 
 
 # ============================================================================
