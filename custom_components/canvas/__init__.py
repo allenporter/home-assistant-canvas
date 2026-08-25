@@ -17,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 
 type CanvasConfigEntry = ConfigEntry[CanvasDataUpdateCoordinator]
 
-PLATFORMS: list[Platform] = [Platform.TODO, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.TODO, Platform.SENSOR, Platform.CALENDAR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CanvasConfigEntry) -> bool:

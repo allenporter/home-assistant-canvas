@@ -50,6 +50,11 @@
       "assignments": {
         "name": "Assignments"
       }
+    },
+    "calendar": {
+      "assignments": {
+        "name": "Assignments"
+      }
     }
   }
 }
