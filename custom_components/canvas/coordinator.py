@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import logging
 
@@ -58,13 +59,12 @@ class CanvasDataUpdateCoordinator(DataUpdateCoordinator[CanvasData]):
         ):
             await super().async_config_entry_first_refresh()
         else:
-            async with self._debounced_refresh.async_lock():
-                await self._async_refresh(
-                    log_failures=False,
-                    raise_on_auth_failed=True,
-                    scheduled=False,
-                    raise_on_entry_error=True,
-                )
+            await self._async_refresh(
+                log_failures=True,
+                raise_on_auth_failed=True,
+                scheduled=False,
+                raise_on_entry_error=True,
+            )
 
     async def _async_update_data(self) -> CanvasData:
         """Fetch all data from Canvas LMS API and isolate per student."""
@@ -86,19 +86,33 @@ class CanvasDataUpdateCoordinator(DataUpdateCoordinator[CanvasData]):
             courses_by_student: dict[int, list[CanvasCourse]] = {}
             assignments_by_student: dict[int, list[CanvasAssignment]] = {}
 
-            for student in observees:
+            async def _fetch_student_data(
+                student: CanvasObservee,
+            ) -> tuple[int, list[CanvasCourse], list[CanvasAssignment]]:
                 raw_courses = await self.client.async_get_student_courses(student.id)
                 active_courses = filter_active_courses(raw_courses)
-                courses_by_student[student.id] = active_courses
-
-                student_assignments: list[CanvasAssignment] = []
-                for course in active_courses:
-                    raw_asgs = await self.client.async_get_student_assignments(
-                        course.id, student.id
+                course_results = await asyncio.gather(
+                    *(
+                        self.client.async_get_student_assignments(course.id, student.id)
+                        for course in active_courses
                     )
-                    pending_asgs = filter_pending_assignments(raw_asgs, course)
-                    student_assignments.extend(pending_asgs)
-                assignments_by_student[student.id] = student_assignments
+                )
+                student_assignments: list[CanvasAssignment] = []
+                for course, raw_asgs in zip(
+                    active_courses, course_results, strict=True
+                ):
+                    student_assignments.extend(
+                        filter_pending_assignments(raw_asgs, course)
+                    )
+                return student.id, active_courses, student_assignments
+
+            student_results = await asyncio.gather(
+                *(_fetch_student_data(student) for student in observees)
+            )
+
+            for student_id, active_courses, student_assignments in student_results:
+                courses_by_student[student_id] = active_courses
+                assignments_by_student[student_id] = student_assignments
 
             return CanvasData(
                 user=user,
