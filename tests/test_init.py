@@ -17,7 +17,6 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 
 from custom_components.canvas import (
     async_reload_entry,
-    async_setup_entry,
     async_unload_entry,
 )
 from custom_components.canvas.const import (
@@ -297,13 +296,15 @@ async def test_async_setup_and_unload_with_forwarded_platforms(
             return_value=True,
         ) as mock_unload,
     ):
-        setup_result = await async_setup_entry(hass, mock_config_entry)
+        setup_result = await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
         assert setup_result is True
         assert len(mock_forward.mock_calls) == 1
 
-        unload_result = await async_unload_entry(hass, mock_config_entry)
+        unload_result = await hass.config_entries.async_unload(
+            mock_config_entry.entry_id
+        )
         await hass.async_block_till_done()
 
         assert unload_result is True

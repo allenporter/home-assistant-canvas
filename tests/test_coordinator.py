@@ -363,7 +363,7 @@ async def test_coordinator_polling_cadence_60_minutes(
     unsub = coordinator.async_add_listener(lambda: None)
 
     # Initial refresh
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_refresh()
     initial_call_count = len(aioclient_mock.mock_calls)
     assert initial_call_count >= 1
 

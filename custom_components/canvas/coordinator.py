@@ -6,7 +6,7 @@ import asyncio
 from datetime import timedelta
 import logging
 
-from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -50,21 +50,6 @@ class CanvasDataUpdateCoordinator(DataUpdateCoordinator[CanvasData]):
             update_interval=update_interval,
             always_update=True,
         )
-
-    async def async_config_entry_first_refresh(self) -> None:
-        """Refresh data for the first time when a config entry is setup."""
-        if (
-            self.config_entry is not None
-            and self.config_entry.state is ConfigEntryState.SETUP_IN_PROGRESS
-        ):
-            await super().async_config_entry_first_refresh()
-        else:
-            await self._async_refresh(
-                log_failures=True,
-                raise_on_auth_failed=True,
-                scheduled=False,
-                raise_on_entry_error=True,
-            )
 
     async def _async_update_data(self) -> CanvasData:
         """Fetch all data from Canvas LMS API and isolate per student."""
