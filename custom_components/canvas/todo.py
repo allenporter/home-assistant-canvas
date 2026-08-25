@@ -23,6 +23,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import CanvasConfigEntry
 from .const import CONF_BASE_URL, DOMAIN
 from .coordinator import CanvasDataUpdateCoordinator
+from .filtering import is_online_submission_assignment
 from .models import CanvasCourse, CanvasObservee
 
 _LOGGER = logging.getLogger(__name__)
@@ -193,6 +194,9 @@ class CanvasTodoListEntity(
         )
 
         for assignment in assignments:
+            if not is_online_submission_assignment(assignment):
+                continue
+
             uid = str(assignment.id)
             if uid in self._deleted_uids:
                 continue

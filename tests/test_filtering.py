@@ -12,6 +12,7 @@ from custom_components.canvas.filtering import (
     filter_pending_assignments,
     is_active_course,
     is_active_todo_assignment,
+    is_online_submission_assignment,
 )
 from custom_components.canvas.models import (
     CanvasAssignment,
@@ -540,3 +541,33 @@ def test_filter_pending_assignments() -> None:
     pending = filter_pending_assignments([asg1, asg2, asg3], course, now=FROZEN_NOW)
     assert len(pending) == 1
     assert pending[0].id == 1
+
+
+@pytest.mark.parametrize(
+    ("submission_types", "expected"),
+    [
+        (("online_upload",), True),
+        (("online_text_entry",), True),
+        (("online_url",), True),
+        (("media_recording",), True),
+        (("online_quiz",), True),
+        (("discussion_topic",), True),
+        (("external_tool",), True),
+        (("on_paper", "online_upload"), True),
+        (("on_paper",), False),
+        (("none",), False),
+        (("not_graded",), False),
+        ((), False),
+    ],
+)
+def test_is_online_submission_assignment(
+    submission_types: tuple[str, ...], expected: bool
+) -> None:
+    """Test online submission detection for actionable to-do assignments."""
+    asg = CanvasAssignment(
+        id=10,
+        course_id=1,
+        name="Assignment",
+        submission_types=submission_types,
+    )
+    assert is_online_submission_assignment(asg) is expected

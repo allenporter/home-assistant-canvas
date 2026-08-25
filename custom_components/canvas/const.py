@@ -62,3 +62,12 @@ SUBMISSION_INCLUDES: Final = ("assignment",)
 FILTER_NOT_GRADED: Final = "not_graded"
 ACTIVE_ENROLLMENT_STATES: Final = ("active", "invited")
 COMPLETED_TERM_STATES: Final = ("completed", "deleted")
+ONLINE_SUBMISSION_TYPES: Final = (
+    "online_upload",
+    "online_text_entry",
+    "online_url",
+    "media_recording",
+    "online_quiz",
+    "discussion_topic",
+    "external_tool",
+)

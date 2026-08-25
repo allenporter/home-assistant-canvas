@@ -9,6 +9,7 @@ from .const import (
     COMPLETED_TERM_STATES,
     DEFAULT_STALE_DAYS_THRESHOLD,
     FILTER_NOT_GRADED,
+    ONLINE_SUBMISSION_TYPES,
 )
 from .models import CanvasAssignment, CanvasCourse
 
@@ -141,3 +142,8 @@ def filter_pending_assignments(
 ) -> list[CanvasAssignment]:
     """Filter assignments to only pending, actionable items for a course."""
     return [a for a in assignments if is_active_todo_assignment(a, course, now=now)]
+
+
+def is_online_submission_assignment(assignment: CanvasAssignment) -> bool:
+    """Return True if assignment requires an actionable online student submission."""
+    return any(st in ONLINE_SUBMISSION_TYPES for st in assignment.submission_types)
