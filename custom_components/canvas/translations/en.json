@@ -3,36 +3,36 @@
     "step": {
       "user": {
         "title": "Connect to Canvas LMS",
-        "description": "Enter your Canvas instance URL and Personal Access Token.",
+        "description": "Enter your Canvas instance URL and Personal Access Token.\n\nTo generate an Access Token:\n1. In Canvas Global Navigation, click **Account** and then **Settings**.\n2. Under **Approved Integrations**, click **+ New Access Token**.\n3. Enter a Purpose (e.g., `Home Assistant`) and click **Generate Token**.\n4. Copy the generated token and paste it below.",
         "data": {
           "base_url": "Canvas URL",
           "access_token": "Access Token"
         },
         "data_description": {
           "base_url": "The web address of your school's Canvas instance (e.g., https://school.instructure.com or https://canvas.university.edu).",
-          "access_token": "Generated in Canvas under Account > Settings > Approved Integrations > New Access Token."
+          "access_token": "Personal access token generated in Canvas under Account > Settings > Approved Integrations > + New Access Token."
         }
       },
       "reauth_confirm": {
         "title": "Re-authenticate with Canvas LMS",
-        "description": "The existing access token is invalid or expired. Please enter a valid access token.",
+        "description": "The existing access token is invalid or expired. Please enter a valid access token.\n\nTo generate a new Access Token in Canvas, go to **Account** > **Settings** > **Approved Integrations** > **+ New Access Token**.",
         "data": {
           "access_token": "Access Token"
         },
         "data_description": {
-          "access_token": "Generated in Canvas under Account > Settings > Approved Integrations > New Access Token."
+          "access_token": "Personal access token generated in Canvas under Account > Settings > Approved Integrations > + New Access Token."
         }
       },
       "reconfigure": {
         "title": "Reconfigure Canvas LMS",
-        "description": "Update your Canvas instance URL and Personal Access Token.",
+        "description": "Update your Canvas instance URL and Personal Access Token.\n\nTo generate an Access Token:\n1. In Canvas Global Navigation, click **Account** and then **Settings**.\n2. Under **Approved Integrations**, click **+ New Access Token**.\n3. Enter a Purpose (e.g., `Home Assistant`) and click **Generate Token**.\n4. Copy the generated token and paste it below.",
         "data": {
           "base_url": "Canvas URL",
           "access_token": "Access Token"
         },
         "data_description": {
           "base_url": "The web address of your school's Canvas instance (e.g., https://school.instructure.com or https://canvas.university.edu).",
-          "access_token": "Generated in Canvas under Account > Settings > Approved Integrations > New Access Token."
+          "access_token": "Personal access token generated in Canvas under Account > Settings > Approved Integrations > + New Access Token."
         }
       }
     },
