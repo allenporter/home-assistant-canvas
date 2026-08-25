@@ -73,7 +73,7 @@ def test_is_active_course_valid() -> None:
 
 @pytest.mark.parametrize(
     "invalid_name",
-    ["", "   ", "Unnamed Course", "None"],
+    ["", "   ", "Unnamed Course", "None", "Course 5388", "Course 12345"],
 )
 def test_is_active_course_invalid_name(invalid_name: str) -> None:
     """Test rejection of blank or placeholder course names."""

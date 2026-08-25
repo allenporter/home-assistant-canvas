@@ -31,7 +31,11 @@ def is_active_course(course: CanvasCourse, now: datetime | None = None) -> bool:
     current_time = _to_utc(now) or datetime.now(timezone.utc)
 
     # 1. Filter out empty or placeholder course names
-    if not course.name or course.name.strip() in ("", "Unnamed Course", "None"):
+    if (
+        not course.name
+        or course.name.strip() in ("", "Unnamed Course", "None")
+        or (course.name.startswith("Course ") and course.name[7:].isdigit())
+    ):
         return False
 
     # 2. Check workflow state
