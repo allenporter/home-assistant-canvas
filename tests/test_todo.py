@@ -685,7 +685,7 @@ async def test_todo_filters_in_class_and_paper_assignments(
     aioclient_mock: AiohttpClientMocker,
     mock_config_entry: MockConfigEntry,
 ) -> None:
-    """Test that in-class / on-paper assignments are excluded from To-Do lists."""
+    """Test that in-class activities and warm-ups are excluded, while paper and online homework are kept."""
     sub_paper: dict[str, Any] = {
         "id": 901,
         "user_id": 6021,
@@ -712,13 +712,26 @@ async def test_todo_filters_in_class_and_paper_assignments(
             "submission_types": ["none"],
         },
     }
-    sub_online: dict[str, Any] = {
+    sub_donow: dict[str, Any] = {
         "id": 903,
         "user_id": 6021,
         "assignment_id": 203,
         "workflow_state": "unsubmitted",
         "assignment": {
             "id": 203,
+            "name": "Do Now 8/19 and 8/21",
+            "course_id": 7349,
+            "due_at": "2026-09-02T12:00:00Z",
+            "submission_types": ["online_text_entry"],
+        },
+    }
+    sub_online: dict[str, Any] = {
+        "id": 904,
+        "user_id": 6021,
+        "assignment_id": 204,
+        "workflow_state": "unsubmitted",
+        "assignment": {
+            "id": 204,
             "name": "Online Homework Upload",
             "course_id": 7349,
             "due_at": "2026-09-03T12:00:00Z",
@@ -740,7 +753,7 @@ async def test_todo_filters_in_class_and_paper_assignments(
     )
     aioclient_mock.get(
         f"{TEST_BASE_URL}{ENDPOINT_COURSE_STUDENT_SUBMISSIONS.format(course_id=7349)}",
-        json=[sub_paper, sub_none, sub_online],
+        json=[sub_paper, sub_none, sub_donow, sub_online],
     )
 
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -752,5 +765,8 @@ async def test_todo_filters_in_class_and_paper_assignments(
     assert isinstance(entity, CanvasTodoListEntity)
 
     items = entity.todo_items or []
-    assert len(items) == 1
-    assert items[0].summary == "[AP US History] Online Homework Upload"
+    summaries = [i.summary for i in items]
+    assert summaries == [
+        "[AP US History] Paper Worksheet",
+        "[AP US History] Online Homework Upload",
+    ]

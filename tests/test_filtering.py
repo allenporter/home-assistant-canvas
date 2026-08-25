@@ -12,6 +12,8 @@ from custom_components.canvas.filtering import (
     filter_pending_assignments,
     is_active_course,
     is_active_todo_assignment,
+    is_actionable_todo_assignment,
+    is_in_class_activity,
     is_online_submission_assignment,
 )
 from custom_components.canvas.models import (
@@ -571,3 +573,36 @@ def test_is_online_submission_assignment(
         submission_types=submission_types,
     )
     assert is_online_submission_assignment(asg) is expected
+
+
+@pytest.mark.parametrize(
+    ("name", "submission_types", "expected_in_class"),
+    [
+        ("Do Now 8/19 and 8/21", ("online_text_entry",), True),
+        ("Guided Notes - Unit 1", ("online_url",), True),
+        ("GN - Chapter 2", ("online_upload",), True),
+        ("CLASS WEEK 2_Thursday_Chords", ("media_recording",), True),
+        ("CLASS_WEEK 3_Monday", ("online_text_entry",), True),
+        ("RWL Workshop 8.17-8.21", ("online_text_entry",), True),
+        ("Weekly Participation", ("online_text_entry",), True),
+        ("Advisory Attendance", ("none",), True),
+        ("Reading Material", ("not_graded",), True),
+        ("Empty Submission Types", (), True),
+        ("Thinking in Systems", ("on_paper",), False),
+        ("Cell Mitosis Lab", ("online_upload",), False),
+        ("Chapter 1 Reflection", ("online_text_entry",), False),
+        ("Carlos Santana Questions", ("online_text_entry",), False),
+    ],
+)
+def test_is_in_class_activity_and_actionable(
+    name: str, submission_types: tuple[str, ...], expected_in_class: bool
+) -> None:
+    """Test classification of in-class activities vs actionable to-do tasks."""
+    asg = CanvasAssignment(
+        id=20,
+        course_id=1,
+        name=name,
+        submission_types=submission_types,
+    )
+    assert is_in_class_activity(asg) is expected_in_class
+    assert is_actionable_todo_assignment(asg) is not expected_in_class

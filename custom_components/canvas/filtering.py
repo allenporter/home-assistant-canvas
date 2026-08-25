@@ -9,6 +9,7 @@ from .const import (
     COMPLETED_TERM_STATES,
     DEFAULT_STALE_DAYS_THRESHOLD,
     FILTER_NOT_GRADED,
+    IN_CLASS_KEYWORDS,
     ONLINE_SUBMISSION_TYPES,
 )
 from .models import CanvasAssignment, CanvasCourse
@@ -147,3 +148,17 @@ def filter_pending_assignments(
 def is_online_submission_assignment(assignment: CanvasAssignment) -> bool:
     """Return True if assignment requires an actionable online student submission."""
     return any(st in ONLINE_SUBMISSION_TYPES for st in assignment.submission_types)
+
+
+def is_in_class_activity(assignment: CanvasAssignment) -> bool:
+    """Return True if assignment is an in-class activity, non-submittable item, or warm-up."""
+    stypes = assignment.submission_types
+    if not stypes or stypes == ("none",) or stypes == ("not_graded",):
+        return True
+    name_lower = assignment.name.lower() if assignment.name else ""
+    return any(kw in name_lower for kw in IN_CLASS_KEYWORDS)
+
+
+def is_actionable_todo_assignment(assignment: CanvasAssignment) -> bool:
+    """Return True if assignment is an actionable homework/task for the student To-Do list."""
+    return not is_in_class_activity(assignment)

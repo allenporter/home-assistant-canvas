@@ -71,3 +71,13 @@ ONLINE_SUBMISSION_TYPES: Final = (
     "discussion_topic",
     "external_tool",
 )
+IN_CLASS_KEYWORDS: Final = (
+    "class week",
+    "class_week",
+    "do now",
+    "guided notes",
+    "gn -",
+    "gn-",
+    "workshop",
+    "participation",
+)
