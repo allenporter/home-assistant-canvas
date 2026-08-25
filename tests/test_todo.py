@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from homeassistant.components.todo import (
@@ -24,6 +24,10 @@ from custom_components.canvas.const import (
     ENDPOINT_USER_COURSES,
     ENDPOINT_USERS_OBSERVEES,
     ENDPOINT_USERS_SELF,
+)
+from custom_components.canvas.todo import (
+    CanvasTodoListEntity,
+    CanvasTodoListExtraStoredData,
 )
 
 from .conftest import (
@@ -526,7 +530,6 @@ async def test_todo_state_restoration_on_startup(
     from pytest_homeassistant_custom_component.common import (
         mock_restore_cache_with_extra_data,
     )
-    from custom_components.canvas.todo import CanvasTodoListExtraStoredData
 
     _setup_dual_student_routes(aioclient_mock)
 
@@ -590,3 +593,85 @@ async def test_todo_state_restoration_on_startup(
     manual_item = [i for i in items if i.uid == "restored_manual_1"][0]
     assert manual_item.summary == "Restored Task"
     assert manual_item.due == datetime(2026, 9, 15, 10, 0, 0, tzinfo=timezone.utc)
+
+
+async def test_todo_items_ordered_by_due_date(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test that To-Do items are ordered chronologically by due date, with undated items at the end."""
+    sub_late: dict[str, Any] = {
+        "id": 881,
+        "user_id": 6021,
+        "assignment_id": 101,
+        "workflow_state": "unsubmitted",
+        "assignment": {
+            "id": 101,
+            "name": "Late Assignment",
+            "course_id": 7349,
+            "due_at": "2026-09-10T23:59:59Z",
+        },
+    }
+    sub_early: dict[str, Any] = {
+        "id": 882,
+        "user_id": 6021,
+        "assignment_id": 102,
+        "workflow_state": "unsubmitted",
+        "assignment": {
+            "id": 102,
+            "name": "Early Assignment",
+            "course_id": 7349,
+            "due_at": "2026-09-01T12:00:00Z",
+        },
+    }
+    sub_undated: dict[str, Any] = {
+        "id": 883,
+        "user_id": 6021,
+        "assignment_id": 103,
+        "workflow_state": "unsubmitted",
+        "assignment": {
+            "id": 103,
+            "name": "Undated Assignment",
+            "course_id": 7349,
+            "due_at": None,
+        },
+    }
+
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_USERS_SELF}",
+        json=MOCK_USER_SELF_RESPONSE,
+    )
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_USERS_OBSERVEES}",
+        json=[MOCK_OBSERVEES_RESPONSE[0]],
+    )
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_USER_COURSES.format(user_id=6021)}",
+        json=[{"id": 7349, "name": "AP US History", "workflow_state": "available"}],
+    )
+    aioclient_mock.get(
+        f"{TEST_BASE_URL}{ENDPOINT_COURSE_STUDENT_SUBMISSIONS.format(course_id=7349)}",
+        json=[sub_late, sub_undated, sub_early],
+    )
+
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity = hass.data["entity_components"]["todo"].get_entity(
+        "todo.quentin_porter_assignments"
+    )
+    assert isinstance(entity, CanvasTodoListEntity)
+
+    await entity.async_create_todo_item(
+        TodoItem(summary="Mid Assignment", due=date(2026, 9, 5))
+    )
+
+    items = entity.todo_items or []
+    summaries = [i.summary for i in items]
+    assert summaries == [
+        "[AP US History] Early Assignment",
+        "Mid Assignment",
+        "[AP US History] Late Assignment",
+        "[AP US History] Undated Assignment",
+    ]

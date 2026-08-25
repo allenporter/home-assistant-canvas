@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import logging
 from typing import Any, Self
 from uuid import uuid4
@@ -228,7 +228,23 @@ class CanvasTodoListEntity(
         # Append locally created manual items
         items.extend(self._manual_items.values())
 
+        # Order items chronologically by due date, then summary
+        items.sort(key=self._item_sort_key)
+
         self._attr_todo_items = items
+
+    @staticmethod
+    def _item_sort_key(item: TodoItem) -> tuple[int, datetime, str]:
+        """Sort key to order To-Do items by due date ascending, then summary."""
+        due = item.due
+        summary = item.summary or ""
+        if due is None:
+            return (1, datetime.max.replace(tzinfo=timezone.utc), summary)
+        if isinstance(due, datetime):
+            due_dt = due if due.tzinfo is not None else due.replace(tzinfo=timezone.utc)
+            return (0, due_dt, summary)
+        due_dt = datetime.combine(due, datetime.min.time(), tzinfo=timezone.utc)
+        return (0, due_dt, summary)
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
